@@ -64,31 +64,41 @@ export function useContentSettings() {
   });
 
   const toggle = useMutation({
-    mutationFn: async (key: keyof ContentSettings) => {
+    mutationFn: async ({ key, value }: { key: keyof ContentSettings; value: boolean }) => {
       if (!user) return;
-      const current = query.data ?? DEFAULTS;
-      const newValue = !current[key];
 
       const payload: { id: string } & Partial<SettingsRow> = { id: user.id };
 
-      if (key === "chatOnProperties") payload.chat_on_properties = newValue;
-      if (key === "chatOnRequests") payload.chat_on_requests = newValue;
-      if (key === "showWhatsapp") payload.show_whatsapp = newValue;
-      if (key === "showCallButton") payload.show_call_button = newValue;
-      if (key === "notifyLikes") payload.notify_likes = newValue;
-      if (key === "notifySaves") payload.notify_saves = newValue;
-      if (key === "notifyFollows") payload.notify_follows = newValue;
-      if (key === "notifyChat") payload.notify_chat = newValue;
+      if (key === "chatOnProperties") payload.chat_on_properties = value;
+      if (key === "chatOnRequests") payload.chat_on_requests = value;
+      if (key === "showWhatsapp") payload.show_whatsapp = value;
+      if (key === "showCallButton") payload.show_call_button = value;
+      if (key === "notifyLikes") payload.notify_likes = value;
+      if (key === "notifySaves") payload.notify_saves = value;
+      if (key === "notifyFollows") payload.notify_follows = value;
+      if (key === "notifyChat") payload.notify_chat = value;
 
-      const { error } = await supabase.from("profiles").upsert(payload);
+      const { error } = await supabase.from("profiles").update(payload).eq("id", user.id);
       if (error) throw error;
+    },
+    onMutate: async ({ key, value }) => {
+      await qc.cancelQueries({ queryKey });
+      const previous = qc.getQueryData<ContentSettings>(queryKey);
+      qc.setQueryData<ContentSettings>(queryKey, { ...(previous ?? DEFAULTS), [key]: value });
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) qc.setQueryData(queryKey, context.previous);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey }),
   });
 
   return {
     settings: query.data ?? DEFAULTS,
-    toggleSetting: (key: keyof ContentSettings) => toggle.mutate(key),
+    toggleSetting: (key: keyof ContentSettings) => {
+      const current = qc.getQueryData<ContentSettings>(queryKey) ?? query.data ?? DEFAULTS;
+      toggle.mutate({ key, value: !current[key] });
+    },
   };
 }
 

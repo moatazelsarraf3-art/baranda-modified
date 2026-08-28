@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Platform } from "react-native";
 import { router } from "expo-router";
 import { View, Text, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import Svg, { Path, Circle, Rect } from "react-native-svg";
@@ -21,6 +22,7 @@ import { ContentSettingsModal } from "../components/account/ContentSettingsModal
 import { ComplaintsSuggestionsModal } from "../components/account/ComplaintsSuggestionsModal";
 import { ShareProfileModal } from "../components/account/ShareProfileModal";
 import { PictureInPictureModal } from "../components/shared/PictureInPictureModal";
+import { useIsAdmin } from "../lib/hooks/useIsAdmin";
 
 // New dedicated settings screen — reached from the menu page's "الإعدادات"
 // card. Pulls together the app-level settings that used to live only in
@@ -53,9 +55,11 @@ export default function SettingsScreen() {
   const [complaintsVisible, setComplaintsVisible] = useState(false);
   const [shareProfileVisible, setShareProfileVisible] = useState(false);
   const [pipModalVisible, setPipModalVisible] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const logSupportContact = useLogSupportContact();
   const { user } = useCurrentUser();
   const { profile } = useProfile();
+  const { isAdmin, checking: checkingAdmin } = useIsAdmin();
   const isGuest = !!user?.is_anonymous;
 
   function goToProfile() {
@@ -78,26 +82,34 @@ export default function SettingsScreen() {
 
   const styles = createStyles(themeColors);
 
+  async function performLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await signOut();
+      router.replace("/");
+    } finally {
+      setLoggingOut(false);
+    }
+  }
+
   function confirmLogout() {
     // ↔ بند 3: فى وضع الضيف مفيش حساب حقيقي نسجّل خروج منه — الزر بيتحول
     // لـ "تسجيل الدخول" (goToLogin تحته) فمفروض الدالة دي مبتتناداش أصلاً
     // فى وضع الضيف، بس بنتأكد هنا كمان كحماية إضافية.
     if (isGuest) { goToLogin(); return; }
+    if (Platform.OS === "web") {
+      if (window.confirm(t("هل تريد تسجيل الخروج من حسابك؟"))) void performLogout();
+      return;
+    }
     Alert.alert(t("تسجيل الخروج"), t("هل تريد تسجيل الخروج من حسابك؟"), [
       { text: t("إلغاء"), style: "cancel" },
-      {
-        text: t("تسجيل خروج"),
-        style: "destructive",
-        onPress: async () => {
-          await signOut();
-          router.replace("/");
-        },
-      },
+      { text: t("تسجيل خروج"), style: "destructive", onPress: () => void performLogout() },
     ]);
   }
 
   function goToLogin() {
-    router.replace("/");
+    void performLogout();
   }
 
   return (
@@ -138,6 +150,9 @@ export default function SettingsScreen() {
         <Section title={t("الحساب")} themeColors={themeColors}>
           <Row icon={<ShareIcon />} label={t("مشاركة البروفايل")} onPress={() => setShareProfileVisible(true)} />
           <Row icon={<BellIcon />} label={t("تنبيهاتي المحفوظة")} onPress={() => router.push("/saved-alerts")} />
+          {!checkingAdmin && isAdmin && (
+            <Row icon={<AdminIcon />} label={t("لوحة تحكم الأدمن")} onPress={() => router.push("/admin")} />
+          )}
         </Section>
 
         <Section title={t("الخصوصية")} themeColors={themeColors}>
@@ -196,6 +211,7 @@ export default function SettingsScreen() {
             label={isGuest ? t("تسجيل الدخول") : t("تسجيل خروج")}
             danger={!isGuest}
             onPress={isGuest ? goToLogin : confirmLogout}
+            disabled={loggingOut}
           />
         </Section>
       </ScrollView>
@@ -220,13 +236,13 @@ function Section({ title, children, themeColors }: { title: string; children: Re
 }
 
 function Row({
-  icon, label, onPress, toggle, danger, badge,
+  icon, label, onPress, toggle, danger, badge, disabled,
 }: {
-  icon: React.ReactNode; label: string; onPress: () => void; toggle?: boolean; danger?: boolean; badge?: string;
+  icon: React.ReactNode; label: string; onPress: () => void; toggle?: boolean; danger?: boolean; badge?: string; disabled?: boolean;
 }) {
   const themeColors = useThemeColors();
   return (
-    <Pressable style={[rowStyle, { borderTopColor: themeColors.border }]} onPress={onPress}>
+    <Pressable style={[rowStyle, { borderTopColor: themeColors.border }, disabled && { opacity: 0.55 }]} onPress={onPress} disabled={disabled}>
       {icon}
       <Text style={[rowTextStyle, { color: danger ? "#991B1B" : themeColors.textMuted }]}>{label}</Text>
       {/* ↔ قرار #1: الوضع الداكن مطبَّق فعليًا بس على شاشات محدودة
@@ -260,6 +276,7 @@ function ShareIcon() { return <Svg {...iconProps}><Circle cx={18} cy={5} r={2.5}
 function LogoutIcon() { return <Svg {...iconProps} stroke="#991B1B"><Path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><Path d="M16 17l5-5-5-5M21 12H9" /></Svg>; }
 function ProfileIcon() { return <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#22A652" strokeWidth={2}><Circle cx={12} cy={8} r={4} /><Path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></Svg>; }
 function PipIcon() { return <Svg {...iconProps}><Rect x={3} y={3} width={18} height={14} rx={2} /><Rect x={12} y={11} width={7} height={5} rx={1} /></Svg>; }
+function AdminIcon() { return <Svg {...iconProps}><Path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" /><Path d="M9 12l2 2 4-4" /></Svg>; }
 
 // ↔ الأجزاء اللي محتاجة تتلوّن مع الثيم (خلفية الشاشة/الهيدر/الكروت)
 // بتتبنى ديناميكيًا من useThemeColors() جوه createStyles()، والأجزاء

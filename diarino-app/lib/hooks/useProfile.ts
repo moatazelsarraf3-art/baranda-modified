@@ -89,7 +89,11 @@ export function useProfile() {
       phoneE164: string; phoneCountryCode: string; phoneCountryName: string;
     }>) => {
       if (!user?.id) throw new Error("لا يوجد مستخدم مسجّل دخول");
-      const row: Record<string, string> = {};
+      const row: {
+        full_name?: string; username?: string; first_name?: string; last_name?: string; avatar_url?: string;
+        birth_date?: string; gender?: string; nationality?: string; residence?: string;
+        phone_e164?: string; phone_country_code?: string; phone_country_name?: string;
+      } = {};
       if (patch.fullName !== undefined) row.full_name = patch.fullName;
       if (patch.username !== undefined) row.username = patch.username;
       if (patch.firstName !== undefined) row.first_name = patch.firstName;
@@ -103,8 +107,14 @@ export function useProfile() {
       if (patch.phoneCountryCode !== undefined) row.phone_country_code = patch.phoneCountryCode;
       if (patch.phoneCountryName !== undefined) row.phone_country_name = patch.phoneCountryName;
 
-      const { error } = await supabase.from("profiles").upsert({ id: user.id, ...row });
+      const { data, error } = await supabase
+        .from("profiles")
+        .update(row as unknown as { [key: string]: never })
+        .eq("id", user.id)
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
+      if (!data) throw new Error("Profile row was not updated");
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["profile"] });

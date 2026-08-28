@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -7,6 +8,16 @@ import { resetAdminDB } from "./useAdminDB";
 import { clearCompareSelection } from "./useCompareSelection";
 
 const SKIP_KEY = "diarino:skip_auth"; // must match app/index.tsx
+
+let callbackSessionPromise: Promise<{ error: string | null }> | null = null;
+let callbackUrl: string | null = null;
+let intentionalSignOut = false;
+
+export function consumeIntentionalSignOut(): boolean {
+  const value = intentionalSignOut;
+  intentionalSignOut = false;
+  return value;
+}
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -28,49 +39,80 @@ export function translateOAuthError(raw: string): string {
   return raw || "تعذر تسجيل الدخول. حاول مرة أخرى.";
 }
 
-// ↔ signInGoogle() — the web version used @lovable.dev/cloud-auth-js's
-// signInWithOAuth (window.location redirect, browser-only). Native
-// equivalent: Supabase's own signInWithOAuth to get the provider URL, open
-// it in an in-app browser tab (expo-web-browser), then extract the tokens
-// from the redirect and hand them to supabase.auth.setSession() — this is
-// the currently-documented pattern for Supabase + Expo (no extra native
-// Google SDK/module needed, works in a dev client build).
-export async function signInWithGoogle(): Promise<{ error: string | null }> {
-  const redirectUri = AuthSession.makeRedirectUri({ scheme: "diarino", path: "auth-callback" });
+export async function completeOAuthCallback(rawUrl: string): Promise<{ error: string | null }> {
+  if (callbackUrl === rawUrl && callbackSessionPromise) return callbackSessionPromise;
+  callbackUrl = rawUrl;
+  callbackSessionPromise = completeOAuthCallbackOnce(rawUrl);
+  return callbackSessionPromise;
+}
 
+async function completeOAuthCallbackOnce(rawUrl: string): Promise<{ error: string | null }> {
+  const url = new URL(rawUrl);
+  const hashParams = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+  const accessToken = url.searchParams.get("access_token") || hashParams.get("access_token");
+  const refreshToken = url.searchParams.get("refresh_token") || hashParams.get("refresh_token");
+
+  if (accessToken && refreshToken) {
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    return error ? { error: translateOAuthError(error.message) } : { error: null };
+  }
+
+  const code = url.searchParams.get("code");
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    return error ? { error: translateOAuthError(error.message) } : { error: null };
+  }
+
+  const errorDescription = url.searchParams.get("error_description") || hashParams.get("error_description");
+  return { error: translateOAuthError(errorDescription || "") };
+}
+
+export async function signInWithGoogle(): Promise<{ error: string | null }> {
+  // تحديد رابط العودة بناءً على البيئة (Web أم Native)
+  const redirectUri = Platform.OS === "web"
+    ? `${window.location.origin}/auth-callback`
+    : AuthSession.makeRedirectUri({ scheme: "diarino", path: "auth-callback" });
+
+  // 1. التعامل مع بيئة الويب (Web)
+  if (Platform.OS === "web") {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: redirectUri,
+        skipBrowserRedirect: false, // تحويل مباشر في المتصفح دون تعليق
+      },
+    });
+
+    if (error) return { error: translateOAuthError(error.message) };
+    if (data?.url) {
+      window.location.href = data.url; // التوجيه الفوري لصفحة Google
+    }
+    return { error: null };
+  }
+
+  // 2. التعامل مع تطبيقات الهاتف (Native)
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: { redirectTo: redirectUri, skipBrowserRedirect: true },
   });
+
   if (error || !data?.url) {
     return { error: translateOAuthError(error?.message || "") };
   }
 
   const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUri);
   if (result.type !== "success" || !result.url) {
-    // User closed the browser tab, or it timed out — not necessarily an
-    // "error" worth alarming over, but the caller still needs to know
-    // sign-in didn't complete.
     return { error: result.type === "cancel" ? null : "تعذر تسجيل الدخول. حاول مرة أخرى." };
   }
 
-  const url = new URL(result.url);
-  const hashParams = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
-  const access_token = url.searchParams.get("access_token") || hashParams.get("access_token");
-  const refresh_token = url.searchParams.get("refresh_token") || hashParams.get("refresh_token");
+  const callbackResult = await completeOAuthCallback(result.url);
+  if (callbackResult.error) return callbackResult;
 
-  if (!access_token || !refresh_token) {
-    const errDesc = url.searchParams.get("error_description") || hashParams.get("error_description");
-    return { error: translateOAuthError(errDesc || "") };
-  }
+  const { data: sessionData } = await supabase.auth.getSession();
 
-  const { data: sessionData, error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
-  if (sessionError) return { error: translateOAuthError(sessionError.message) };
-
-  // ↔ powers the admin "سجل نشاط المستخدمين" (user activity log) tab.
-  // Logged here specifically (not via a global onAuthStateChange
-  // listener) so it fires exactly once per real sign-in, not again on
-  // every app restart when a persisted session is simply restored.
   const uid = sessionData?.session?.user?.id;
   if (uid) {
     const { data: profile } = await supabase.from("profiles").select("full_name").eq("id", uid).maybeSingle();
@@ -84,40 +126,21 @@ export async function signInWithGoogle(): Promise<{ error: string | null }> {
   return { error: null };
 }
 
-// ↔ handleSkip() — "continue as guest". Every table's RLS select policy is
-// scoped `to authenticated` (see supabase/migrations/*_create_*_table.sql),
-// so without a real Supabase session a guest's reads are silently blocked
-// by RLS — reels, search, menu, everything would render empty. This uses
-// Supabase's anonymous auth so "guest" still gets a real authenticated
-// session (with its own random uid) that RLS accepts, instead of just a
-// local flag that never talks to Supabase at all.
-// NOTE: requires "Allow anonymous sign-ins" enabled in the Supabase
-// project's Auth settings — without it this call returns an error.
 export async function signInAsGuest(): Promise<{ error: string | null }> {
   const { error } = await supabase.auth.signInAnonymously();
   if (error) return { error: translateOAuthError(error.message) };
   return { error: null };
 }
 
-// ↔ fullSignOut() — also clears the guest-skip flag, otherwise logging out
-// while previously in guest mode would just bounce straight back into the
-// tabs via the skip check in app/index.tsx instead of showing the login screen.
-//
-// ↔ React Query / data-security audit finding: this used to sign out of
-// Supabase and stop there, leaving every cached query (chats, favorites,
-// notifications, drafts, and — most sensitive — the admin dashboard's
-// module-level store in useAdminDB.ts) sitting resident in memory. Most
-// per-user React Query caches are already keyed by user.id so a
-// *different* signed-in user wouldn't literally see the wrong data under
-// their own queries, but there's no good reason to leave any of it
-// around regardless — clearing everything here is simpler and safer than
-// trying to enumerate which specific caches are "sensitive enough" to
-// bother clearing.
 export async function signOut(): Promise<void> {
+  intentionalSignOut = true;
   try {
-    await supabase.auth.signOut({ scope: "global" });
+    // A local sign-out must not wait for the network. Global revocation can
+    // be rate-limited by Supabase and would leave the settings button stuck.
+    await supabase.auth.signOut({ scope: "local" });
   } catch {
-    try { await supabase.auth.signOut(); } catch { /* ignore */ }
+    // Clear the local session even when the auth request fails.
+    try { await supabase.auth.signOut({ scope: "local" }); } catch { /* ignore */ }
   }
   await AsyncStorage.removeItem(SKIP_KEY).catch(() => {});
   queryClient.clear();

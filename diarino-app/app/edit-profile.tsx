@@ -17,6 +17,8 @@ import { validateAndFormatPhone } from "../lib/phone";
 import { findCountry } from "../lib/countries";
 import { CountryPickerModal } from "../components/shared/CountryPickerModal";
 import { COUNTRIES } from "../lib/countries";
+import { logAndGetSafeMessage } from "../lib/errors";
+import { signOut } from "../lib/hooks/useAuth";
 
 // ↔ بند 4 — شاشة "تعديل بيانات الحساب" الجديدة. توصل من:
 //   • شاشة الإعدادات (قسم البروفايل فوق زر تسجيل الخروج مباشرة)
@@ -26,9 +28,16 @@ export default function EditProfileScreen() {
   const { t, language } = useLanguage();
   const themeColors = useThemeColors();
   const styles = createStyles(themeColors);
-  const { user } = useCurrentUser();
+  const { user, loading: userLoading } = useCurrentUser();
   const { profile, isLoading, update } = useProfile();
   const logMedia = useLogMedia();
+
+  useEffect(() => {
+    if (userLoading) return;
+    if (!user || user.is_anonymous) {
+      signOut().finally(() => router.replace("/"));
+    }
+  }, [user, userLoading]);
 
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [username, setUsername] = useState("");
@@ -85,7 +94,12 @@ export default function EditProfileScreen() {
   }
 
   async function handleSave() {
-    if (!user?.id) return;
+    if (!user || user.is_anonymous) {
+      Alert.alert(t("تسجيل الدخول مطلوب"), t("سجّل الدخول أولاً لتعديل بيانات حسابك."));
+      await signOut();
+      router.replace("/");
+      return;
+    }
     let phonePatch: Partial<{ phoneE164: string; phoneCountryCode: string; phoneCountryName: string }> = {};
     if (phone.localNumber.trim()) {
       const country = findCountry(phone.countryIso2);
@@ -110,10 +124,11 @@ export default function EditProfileScreen() {
         ...phonePatch,
       });
       router.back();
-    } catch (e: any) {
-      const msg = e?.message?.includes("duplicate") || e?.code === "23505"
+    } catch (e: unknown) {
+      const errorWithCode = e as { message?: string; code?: string };
+      const msg = errorWithCode.message?.includes("duplicate") || errorWithCode.code === "23505"
         ? t("اسم المستخدم ده مستخدم بالفعل، جرب اسم تاني")
-        : t("تعذر حفظ البيانات، حاول مرة أخرى");
+        : logAndGetSafeMessage("EditProfile.save", e, t("تعذر حفظ البيانات، تحقق من تسجيل الدخول وحاول مرة أخرى"));
       Alert.alert(t("خطأ"), msg);
     } finally {
       setSaving(false);

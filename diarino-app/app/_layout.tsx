@@ -29,10 +29,13 @@ import * as SplashScreen from "expo-splash-screen";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "../lib/queryClient";
 import { supabase } from "../lib/supabase";
+import { consumeIntentionalSignOut } from "../lib/hooks/useAuth";
 import { applyPersistedRTLAtStartup } from "../lib/hooks/useLanguage";
 import { usePushNotifications } from "../lib/hooks/usePushNotifications";
 import { ErrorBoundary } from "../components/shared/ErrorBoundary";
 import { ToastHost } from "../components/shared/Toast";
+import { showToast } from "../components/shared/Toast";
+import { router } from "expo-router";
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   /* no-op if already hidden */
@@ -58,6 +61,13 @@ export default function RootLayout() {
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       const nextUserId = session?.user?.id ?? null;
+      if (_event === "SIGNED_OUT" && lastUserIdRef.current && !consumeIntentionalSignOut()) {
+        lastUserIdRef.current = null;
+        queryClient.clear();
+        showToast("انتهت الجلسة، سجّل دخولك مجدداً");
+        router.replace("/");
+        return;
+      }
       if (lastUserIdRef.current === undefined) {
         // أول حدث بعد الإقلاع (استعادة الجلسة المحفوظة) — مش تغيير فعلي،
         // فمفيش داعي لإعادة تحميل كل حاجة من الصفر.

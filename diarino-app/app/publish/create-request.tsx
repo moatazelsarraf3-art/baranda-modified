@@ -9,6 +9,7 @@ import { useCurrentUser } from "../../lib/hooks/useCurrentUser";
 import { useLanguage } from "../../lib/hooks/useLanguage";
 import { useDraftById, useDraftMutations } from "../../lib/hooks/useDrafts";
 import { useThemeColors, ThemeColors } from "../../lib/hooks/useThemeColors";
+import { signOut } from "../../lib/hooks/useAuth";
 
 const TYPES = ["شقة", "فيلا", "بنتهاوس", "تاون هاوس", "تجاري", "إداري", "طبي", "أرض"];
 
@@ -128,7 +129,7 @@ export default function CreateRequestScreen() {
         <View style={styles.authRequiredBox}>
           <Text style={styles.authRequiredTitle}>{t("يجب تسجيل الدخول لنشر طلب")}</Text>
           <Text style={styles.authRequiredSubtitle}>{t("سجّل الدخول من أجل إتمام النشر ومشاركة طلبك مع البائعين.")}</Text>
-          <Pressable style={styles.authRequiredBtn} onPress={() => router.replace("/")}>          
+          <Pressable style={styles.authRequiredBtn} onPress={async () => { await signOut(); router.replace("/"); }}>
             <Text style={styles.authRequiredBtnText}>{t("تسجيل الدخول")}</Text>
           </Pressable>
         </View>

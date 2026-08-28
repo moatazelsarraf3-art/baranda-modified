@@ -38,11 +38,15 @@ export function useIsAdmin() {
     if (userLoading) return;
     if (!user) {
       setIsAdmin(false);
+      setIsSuperAdmin(false);
+      setFullAccess(false);
+      setPermissions([]);
       setChecking(false);
       return;
     }
 
     let isMounted = true;
+    setChecking(true);
 
     async function fetchAdminStatus(userId: string) {
       try {
@@ -73,6 +77,9 @@ export function useIsAdmin() {
         console.warn("Failed to check admin status:", err);
         if (isMounted) {
           setIsAdmin(false);
+          setIsSuperAdmin(false);
+          setFullAccess(false);
+          setPermissions([]);
           setChecking(false);
         }
       }

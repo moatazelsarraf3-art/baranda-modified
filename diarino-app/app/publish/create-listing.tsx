@@ -24,6 +24,7 @@ import { findCountry } from "../../lib/countries";
 import { useLogMedia } from "../../lib/hooks/useMedia";
 import { useDraftById, useDraftMutations } from "../../lib/hooks/useDrafts";
 import { useThemeColors, ThemeColors } from "../../lib/hooks/useThemeColors";
+import { signOut } from "../../lib/hooks/useAuth";
 
 const TYPES = ["شقة", "فيلا", "بنتهاوس", "تاون هاوس", "تجاري", "إداري", "طبي", "أرض"];
 const FINISH_TYPES = ["بدون تشطيب", "نصف تشطيب", "تشطيب كامل", "لوكس", "سوبر لوكس", "الترا لوكس"];
@@ -325,12 +326,12 @@ export default function CreateListingScreen() {
         const result = validateAndFormatPhone(phone.localNumber, phone.countryIso2);
         if (result.valid) {
           const country = findCountry(phone.countryIso2);
-          await supabase.from("profiles").upsert({
-            id: user.id,
+          const { error } = await supabase.from("profiles").update({
             phone_e164: result.e164,
             phone_country_code: country?.callingCode ?? null,
             phone_country_name: country?.nameAr ?? null,
-          });
+          }).eq("id", user.id);
+          if (error) throw error;
         }
       }
 
@@ -363,7 +364,7 @@ export default function CreateListingScreen() {
         <View style={styles.authRequiredBox}>
           <Text style={styles.authRequiredTitle}>{t("يجب تسجيل الدخول لنشر إعلان")}</Text>
           <Text style={styles.authRequiredSubtitle}>{t("سجّل الدخول من أجل مشاركة الإعلان مع المشترين والبائعين.")}</Text>
-          <Pressable style={styles.authRequiredBtn} onPress={() => router.replace("/")}>
+          <Pressable style={styles.authRequiredBtn} onPress={async () => { await signOut(); router.replace("/"); }}>
             <Text style={styles.authRequiredBtnText}>{t("تسجيل الدخول")}</Text>
           </Pressable>
         </View>

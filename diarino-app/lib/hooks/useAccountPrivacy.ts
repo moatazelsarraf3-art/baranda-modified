@@ -52,7 +52,7 @@ export function useAccountPrivacy() {
     mutationFn: async () => {
       if (!user) return;
       const next = !(query.data ?? true);
-      const { error } = await supabase.from("profiles").upsert({ id: user.id, is_public: next });
+      const { error } = await supabase.from("profiles").update({ is_public: next }).eq("id", user.id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey }),

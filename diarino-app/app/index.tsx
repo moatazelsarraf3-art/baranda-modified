@@ -66,6 +66,12 @@ export default function AuthGateScreen() {
       if (!mounted) return;
       setHasSession(!!data.session?.user);
       setLoading(false);
+    }).catch((err: unknown) => {
+      if (!mounted) return;
+      console.warn("Failed to restore session:", err);
+      setHasSession(false);
+      setLoading(false);
+      setError("انتهت الجلسة، سجّل دخولك مجدداً");
     });
 
     return () => { mounted = false; sub.subscription.unsubscribe(); };
@@ -74,9 +80,27 @@ export default function AuthGateScreen() {
   // ↔ the `if (!session && !skipped) return <LoginScreen/>` branch — once
   // either is true, hand off to the tab shell instead of an iframe src swap.
   useEffect(() => {
-    if (!loading && (hasSession || skipped)) {
-      router.replace("/(tabs)");
+    if (loading || (!hasSession && !skipped)) return;
+
+    let mounted = true;
+    async function routeAuthenticatedUser() {
+      if (!hasSession || skipped) {
+        if (mounted) router.replace("/(tabs)");
+        return;
+      }
+
+      const { data: role } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", (await supabase.auth.getSession()).data.session?.user.id ?? "")
+        .eq("role", "admin")
+        .maybeSingle();
+
+      if (mounted) router.replace(role?.role === "admin" ? "/admin" : "/(tabs)");
     }
+
+    routeAuthenticatedUser();
+    return () => { mounted = false; };
   }, [loading, hasSession, skipped]);
 
   async function handleGoogleSignIn() {

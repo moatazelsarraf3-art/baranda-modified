@@ -78,7 +78,14 @@ export function NotificationsDropdown({
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
       <Animated.View
         style={[

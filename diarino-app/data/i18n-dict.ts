@@ -13,7 +13,7 @@ export const I18N_DICT: Record<string, string> = {
   'انشر عقارك':'Publish Your Property','اطلب عقارك':'Request a Property','ابحث':'Find','ابحث عن عقار':'Find a Property','اشترِ واستأجر بسهولة':'Buy & rent with ease',
   'بدون أي رسوم':'No fees','والعروض توصلك':'Offers come to you','احمي نفسك':'Protect Yourself','مساحة اعلانية — اعرض هنا':'Ad Space — Advertise Here',
   'وكيلك القانوني':'Your Legal Agent','استشارات قانونية عقارية متخصصة':'Specialized real-estate legal consultations',
-  'الإعدادات':'Settings','إدارة الحساب':'Manage Account','اطلع اللايف':'Go Live',
+  'الإعدادات':'Settings','إدارة الحساب':'Manage Account','اطلع اللايف':'Go Live','لوحة تحكم الأدمن':'Admin Panel',
   'لوازم السباكة والكهرباء':'Plumbing & Electrical Supplies','ارفع صورة الطلبات ومن غير تعب التوصيل':'Upload a photo of what you need, hassle-free delivery',
   'اطلب الآن':'Order Now','عام':'General','الخصوصية':'Privacy','الدعم':'Support',
   'هل تريد تسجيل الخروج من حسابك؟':'Do you want to log out of your account?','العرض':'Appearance','الحساب العام':'Public Account',

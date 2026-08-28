@@ -92,7 +92,8 @@ export default function AccountScreen() {
     try {
       const uploadResult = await uploadToCloudinary(uri, "image");
       logMedia.mutate({ ownerId: user.id, type: "image", context: "avatar", result: uploadResult });
-      await supabase.from("profiles").upsert({ id: user.id, avatar_url: uploadResult.url });
+      const { error } = await supabase.from("profiles").update({ avatar_url: uploadResult.url }).eq("id", user.id);
+      if (error) throw error;
       setAvatarUri(uploadResult.url);
     } catch {
       Alert.alert(t("تعذر رفع الصورة"), t("حاول مرة أخرى."));
